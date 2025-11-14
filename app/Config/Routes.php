@@ -52,7 +52,7 @@ $routes->group('student', function($routes) {
     $routes->get('dashboard', 'Student::dashboard');
 });
 
-// COURSE & ENROLLMENT ROUTES
+// COURSE & ENROLLMENT ROUTE
 $routes->post('course/enroll', 'Course::enroll');
 $routes->get('courses', 'Course::index');
 
