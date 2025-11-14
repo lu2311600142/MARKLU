@@ -194,29 +194,37 @@ $isLoggedIn = session('isLoggedIn') ?? false;
             if (isLoading) return; // Prevent multiple simultaneous requests
             
             isLoading = true;
+            $('#notif-loading').show();
             
             $.ajax({
                 url: '<?= base_url('notifications') ?>',
                 method: 'GET',
+                timeout: 10000, // 10 second timeout
                 dataType: 'json',
                 headers: {
                     'X-Requested-With': 'XMLHttpRequest',
                     'X-CSRF-TOKEN': csrfToken
                 },
                 success: function(response) {
-                    if (response && response.status === 'ok') {
-                        updateBadge(response.unread || 0);
-                        renderNotifications(response.notifications || []);
+                    if (response.status === 'ok') {
+                        updateBadge(response.unread);
+                        renderNotifications(response.notifications);
                         updatePageTitle(response.unread);
+                    } else {
+                        console.error('Server error:', response.message || 'Unknown error');
+                        showNotification('Error loading notifications', 'danger');
                     }
                 },
                 error: function(xhr, status, error) {
-                    console.error('Error fetching notifications:', error);
-                    showToast('Error loading notifications', 'danger');
+                    console.error('Error fetching notifications:', status, error);
+                    if (status === 'timeout') {
+                        showNotification('Request timed out. Please check your connection.', 'warning');
+                    } else {
+                        showNotification('Failed to load notifications. Please try again.', 'danger');
+                    }
                 },
                 complete: function() {
                     isLoading = false;
-                    // Hide loading state
                     $('#notif-loading').hide();
                     $('#notif-title').show();
                 }
@@ -229,33 +237,45 @@ $isLoggedIn = session('isLoggedIn') ?? false;
          * @param {boolean} markAll - Whether to mark all as read
          */
         function markAsRead(id = null, markAll = false) {
+            if (isLoading) return; // Prevent multiple clicks
+            
             const url = markAll 
                 ? '<?= base_url('notifications/mark_all_read') ?>'
                 : `<?= base_url('notifications/mark_read') ?>/${id}`;
                 
+            isLoading = true;
+            $('#notif-loading').show();
+                
             $.ajax({
                 url: url,
                 method: 'POST',
-                dataType: 'json',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'X-CSRF-TOKEN': csrfToken
-                },
-                success: function(response) {
-                    if (response.status === 'ok') {
-                        // Refresh notifications
-                        fetchNotifications();
-                        
-                        // Show feedback
-                        if (markAll) {
-                            showToast('All notifications marked as read', 'success');
-                        }
+                data: { [csrfName]: csrfToken },
+                timeout: 5000 // 5 second timeout
+            })
+            .done(function(response) {
+                if (response.status === 'ok') {
+                    // Refresh notifications
+                    fetchNotifications();
+                    
+                    if (markAll) {
+                        showNotification('All notifications marked as read', 'success');
                     }
-                },
-                error: function(xhr, status, error) {
-                    console.error('Error marking notification as read:', error);
-                    showToast('Error updating notification', 'danger');
+                } else {
+                    console.error('Server error:', response.message || 'Unknown error');
+                    showNotification('Failed to update notification', 'danger');
                 }
+            })
+            .fail(function(xhr, status, error) {
+                console.error('Error marking notification as read:', status, error);
+                if (status === 'timeout') {
+                    showNotification('Request timed out. Please try again.', 'warning');
+                } else {
+                    showNotification('Failed to update notification. Please try again.', 'danger');
+                }
+            })
+            .always(function() {
+                isLoading = false;
+                $('#notif-loading').hide();
             });
         }
 
@@ -272,37 +292,24 @@ $isLoggedIn = session('isLoggedIn') ?? false;
         }
 
         /**
-         * Show a toast notification
+         * Show a temporary notification message
          * @param {string} message - Message to display
          * @param {string} type - Bootstrap alert type (success, danger, etc.)
          */
-        function showToast(message, type = 'info') {
-            // Create toast container if it doesn't exist
-            let $toastContainer = $('#toast-container');
-            if ($toastContainer.length === 0) {
-                $toastContainer = $('<div id="toast-container" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11"></div>').appendTo('body');
-            }
-
-            const toastId = 'toast-' + Date.now();
-            const $toast = $(`
-                <div id="${toastId}" class="toast align-items-center text-white bg-${type} border-0" role="alert" aria-live="assertive" aria-atomic="true">
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            ${message}
-                        </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                    </div>
+        function showNotification(message, type = 'info') {
+            const alert = $(`
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert" style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             `);
-
-            $toastContainer.append($toast);
-            const toast = new bootstrap.Toast($toast[0]);
-            toast.show();
-
-            // Remove toast after it's hidden
-            $toast.on('hidden.bs.toast', function() {
-                $toast.remove();
-            });
+            
+            $('body').append(alert);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                alert.alert('close');
+            }, 5000);
         }
 
         /**
